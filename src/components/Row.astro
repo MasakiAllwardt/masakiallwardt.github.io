@@ -1,0 +1,100 @@
+---
+import { Image } from 'astro:assets';
+import type { Entry } from '../data/types';
+import { resolveMedia } from '../lib/media';
+
+interface Props {
+  entry: Entry;
+  /** Rows sharing a group open one at a time. */
+  group: string;
+}
+
+const { entry, group } = Astro.props;
+const media = await Promise.all((entry.media ?? []).map(resolveMedia));
+const opens = Boolean(entry.points?.length || media.length || entry.stack?.length || entry.links?.length);
+const Wrap = opens ? 'details' : 'div';
+const Head = opens ? 'summary' : 'div';
+---
+
+<Wrap class:list={['item', { 'item--static': !opens }]} name={opens ? group : undefined}>
+  <Head class="row">
+    <span class="row__name">
+      <span class="row__title">{entry.name}</span>
+      {entry.role && <span class="row__role">{entry.role}</span>}
+    </span>
+    {
+      entry.ongoing ? (
+        <span class="row__meta">
+          <span class="live">ongoing</span>
+        </span>
+      ) : entry.result ? (
+        <span class="row__meta row__result">
+          <span class="sr-only">{entry.result}</span>
+          <span aria-hidden="true">
+            {[...entry.result].map((ch, i) => (
+              <span class="ch" style={`--i:${i}`}>{ch}</span>
+            ))}
+          </span>
+        </span>
+      ) : (
+        <span class="row__meta">{entry.meta}</span>
+      )
+    }
+    <span class="row__toggle" aria-hidden="true"></span>
+  </Head>
+  {
+    opens && (
+      <div class="item__body">
+        {!!entry.points?.length && (
+          <ul class="points">
+            {entry.points.map((p) => (
+              <li>{p}</li>
+            ))}
+          </ul>
+        )}
+        {!!media.length && (
+          <div class="media">
+            {media.map((m) => (
+              <figure class="media__item">
+                {m.kind === 'image' ? (
+                  <button class="media__open" type="button" data-kind="image" data-full={m.full} data-alt={m.alt} data-caption={m.caption}>
+                    <Image src={m.image} alt={m.alt} height={150} densities={[1, 2]} />
+                  </button>
+                ) : (
+                  <button class="media__open" type="button" data-kind="video" data-full={m.url} data-alt={m.alt} data-caption={m.caption}>
+                    <video
+                      src={`${m.url}#t=0.1`}
+                      muted
+                      loop
+                      playsinline
+                      preload="metadata"
+                      aria-label={m.alt}
+                      style={`aspect-ratio: ${m.aspect ?? '16 / 9'}`}
+                    />
+                  </button>
+                )}
+                {m.caption && <figcaption>{m.caption}</figcaption>}
+              </figure>
+            ))}
+          </div>
+        )}
+        {!!entry.stack?.length && (
+          <p class="stack">
+            {entry.stack.map((s) => (
+              <span>{s}</span>
+            ))}
+          </p>
+        )}
+        {!!entry.links?.length && (
+          <p class="item__links">
+            {entry.links.map((l) => (
+              <a href={l.href} target="_blank" rel="noopener">
+                {l.label} ↗
+              </a>
+            ))}
+          </p>
+        )}
+      </div>
+    )
+  }
+</Wrap>

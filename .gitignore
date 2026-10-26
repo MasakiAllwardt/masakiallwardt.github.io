@@ -1,0 +1,10 @@
+node_modules/
+dist/
+.astro/
+.DS_Store
+
+# local tooling
+.claude/
+
+# original recordings; the site uses the GIFs in src/assets/projects/
+images/

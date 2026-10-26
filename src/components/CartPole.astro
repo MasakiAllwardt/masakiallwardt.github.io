@@ -1,0 +1,285 @@
+---
+// A cart-pole at the bottom of the page, held up by a linear state-feedback
+// controller. Click (or focus it and use ← →) to knock the pole around;
+// push too hard and the episode ends.
+---
+
+<section class="sim shell" data-sim aria-label="Cart-pole balancing demo">
+  <canvas
+    tabindex="0"
+    aria-label="Cart-pole simulation. Click, or press the left and right arrow keys, to push the pole."
+  ></canvas>
+  <div class="hud" aria-hidden="true">
+    <span>policy <b>lqr</b></span>
+    <span>θ <b data-k="theta">+0.000</b></span>
+    <span>ep <b data-k="ep">1</b></span>
+    <span>return <b data-k="ret">0</b></span>
+  </div>
+  <p class="hint" aria-hidden="true">click to perturb</p>
+</section>
+
+<style>
+  .sim {
+    flex: 0 0 auto;
+    margin-top: auto;
+    padding-top: 2rem;
+  }
+
+  canvas {
+    display: block;
+    width: 100%;
+    height: clamp(130px, 19vh, 170px);
+    cursor: pointer;
+    touch-action: manipulation;
+  }
+
+  canvas:focus-visible { outline-offset: 6px; }
+
+  .hud {
+    position: absolute;
+    top: 2rem;
+    left: 0;
+    display: flex;
+    gap: 1.1rem;
+    font-family: var(--mono);
+    font-size: 0.66rem;
+    color: var(--fg-3);
+    pointer-events: none;
+  }
+
+  .hud b {
+    font-weight: 400;
+    color: var(--fg-2);
+    font-variant-numeric: tabular-nums;
+  }
+
+  .hint {
+    position: absolute;
+    right: 0;
+    bottom: 0;
+    font-family: var(--mono);
+    font-size: 0.62rem;
+    letter-spacing: 0.06em;
+    color: var(--fg-3);
+    pointer-events: none;
+  }
+</style>
+
+<script>
+  const root = document.querySelector<HTMLElement>('[data-sim]');
+  const canvas = root?.querySelector('canvas');
+  const ctx = canvas?.getContext('2d');
+
+  if (root && canvas && ctx) {
+    // Gym CartPole dynamics, with a continuous force instead of ±10 N.
+    const G = 9.8, MC = 1.0, MP = 0.1, M = MC + MP, L = 0.5, PML = MP * L;
+    const DT = 0.02, F_MAX = 20, X_LIM = 2.4, TH_LIM = 0.7;
+    // F = K·s, tuned offline to recover from ~±2.5 rad/s kicks without leaving the track.
+    const K = [2, 3, 40, 8];
+
+    const hud = {
+      theta: root.querySelector<HTMLElement>('[data-k="theta"]')!,
+      ep: root.querySelector<HTMLElement>('[data-k="ep"]')!,
+      ret: root.querySelector<HTMLElement>('[data-k="ret"]')!,
+    };
+
+    const css = getComputedStyle(document.documentElement);
+    const color = {
+      fg: css.getPropertyValue('--fg').trim(),
+      fg3: css.getPropertyValue('--fg-3').trim(),
+      rule: css.getPropertyValue('--rule').trim(),
+      bg: css.getPropertyValue('--bg').trim(),
+    };
+
+    if (matchMedia('(hover: none)').matches) root.querySelector('.hint')!.textContent = 'tap to perturb';
+
+    let s = [0, 0, 0.04, 0]; // x, ẋ, θ, θ̇
+    let ep = 1, ret = 0;
+    let fallen = 0; // seconds left in the "episode over" pause
+    let gust = 4 + Math.random() * 4;
+    let kick = { dir: 0, t: 0 };
+
+    const clamp = (v: number, lo: number, hi: number) => Math.min(hi, Math.max(lo, v));
+
+    function dynamics(F: number) {
+      const [x, v, th, w] = s;
+      const c = Math.cos(th), sn = Math.sin(th);
+      const tmp = (F + PML * w * w * sn) / M;
+      const thAcc = (G * sn - c * tmp) / (L * (4 / 3 - (MP * c * c) / M));
+      const xAcc = tmp - (PML * thAcc * c) / M;
+      s = [x + DT * v, v + DT * xAcc, th + DT * w, w + DT * thAcc];
+    }
+
+    function push(dir: number, strength = 1.6 + Math.random() * 0.9) {
+      if (fallen > 0) return;
+      s[3] += dir * strength;
+      kick = { dir, t: 0.35 };
+    }
+
+    function reset() {
+      s = [0, 0, (Math.random() - 0.5) * 0.12, 0];
+      ep += 1;
+      ret = 0;
+    }
+
+    function tick() {
+      kick.t = Math.max(0, kick.t - DT);
+
+      if (fallen > 0) {
+        // Let it fall onto the track, then start a new episode.
+        dynamics(0);
+        const rest = Math.PI / 2 - 0.08;
+        if (Math.abs(s[2]) > rest) { s[2] = Math.sign(s[2]) * rest; s[3] = 0; }
+        if (Math.abs(s[0]) > X_LIM + 0.25) { s[0] = Math.sign(s[0]) * (X_LIM + 0.25); s[1] = 0; }
+        fallen -= DT;
+        if (fallen <= 0) reset();
+        return;
+      }
+
+      gust -= DT;
+      if (gust <= 0) {
+        push(Math.random() < 0.5 ? -1 : 1, 0.5 + Math.random() * 0.6);
+        gust = 5 + Math.random() * 5;
+      }
+      s[3] += (Math.random() - 0.5) * 0.04;
+
+      dynamics(clamp(K[0] * s[0] + K[1] * s[1] + K[2] * s[2] + K[3] * s[3], -F_MAX, F_MAX));
+      ret += 1;
+      if (Math.abs(s[2]) > TH_LIM || Math.abs(s[0]) > X_LIM) fallen = 1.4;
+    }
+
+    let w = 0, h = 0;
+    function resize() {
+      const r = canvas!.getBoundingClientRect();
+      const dpr = Math.min(window.devicePixelRatio || 1, 2);
+      w = r.width;
+      h = r.height;
+      canvas!.width = Math.round(w * dpr);
+      canvas!.height = Math.round(h * dpr);
+      ctx!.setTransform(dpr, 0, 0, dpr, 0, 0);
+      draw();
+    }
+
+    function draw() {
+      const c = ctx!;
+      c.clearRect(0, 0, w, h);
+
+      const ground = h - 22;
+      const scale = (w - 32) / (2 * X_LIM + 0.6); // px per metre
+      const toPx = (x: number) => w / 2 + x * scale;
+
+      // track, with a tick every 0.4 m and taller ones at the limits
+      c.lineWidth = 1;
+      c.strokeStyle = color.rule;
+      c.beginPath();
+      c.moveTo(toPx(-X_LIM - 0.3), ground + 0.5);
+      c.lineTo(toPx(X_LIM + 0.3), ground + 0.5);
+      c.stroke();
+      c.strokeStyle = color.fg3;
+      c.beginPath();
+      for (let x = -X_LIM; x <= X_LIM + 1e-6; x += 0.4) {
+        const edge = Math.abs(Math.abs(x) - X_LIM) < 1e-6;
+        const px = Math.round(toPx(x)) + 0.5;
+        c.moveTo(px, ground + 3);
+        c.lineTo(px, ground + (edge ? 9 : 5));
+      }
+      c.stroke();
+
+      // cart
+      const cx = toPx(s[0]);
+      const cw = 34, ch = 13, wheel = 3;
+      const top = ground - 2 * wheel - ch;
+      c.fillStyle = color.bg;
+      c.strokeStyle = color.fg;
+      c.lineWidth = 1.25;
+      c.beginPath();
+      c.rect(Math.round(cx - cw / 2) + 0.5, Math.round(top) + 0.5, cw, ch);
+      c.fill();
+      c.stroke();
+      for (const dx of [-10, 10]) {
+        c.beginPath();
+        c.arc(cx + dx, ground - wheel, wheel, 0, Math.PI * 2);
+        c.fill();
+        c.stroke();
+      }
+
+      // pole (2L = 1 m long)
+      const len = Math.min(scale * 2 * L, top - 12);
+      const tipX = cx + Math.sin(s[2]) * len;
+      const tipY = top - Math.cos(s[2]) * len;
+      c.lineWidth = 2;
+      c.lineCap = 'round';
+      c.beginPath();
+      c.moveTo(cx, top);
+      c.lineTo(tipX, tipY);
+      c.stroke();
+      c.fillStyle = color.fg;
+      c.beginPath();
+      c.arc(tipX, tipY, 4.5, 0, Math.PI * 2);
+      c.fill();
+      c.fillStyle = color.bg;
+      c.lineWidth = 1.25;
+      c.beginPath();
+      c.arc(cx, top, 2.5, 0, Math.PI * 2);
+      c.fill();
+      c.stroke();
+
+      // a short arrow beside the bob after each push
+      if (kick.t > 0) {
+        c.globalAlpha = kick.t / 0.35;
+        const ax = tipX - kick.dir * 26, ay = tipY;
+        c.strokeStyle = color.fg;
+        c.lineWidth = 1.25;
+        c.beginPath();
+        c.moveTo(ax - kick.dir * 12, ay);
+        c.lineTo(ax, ay);
+        c.moveTo(ax - kick.dir * 4, ay - 3.5);
+        c.lineTo(ax, ay);
+        c.lineTo(ax - kick.dir * 4, ay + 3.5);
+        c.stroke();
+        c.globalAlpha = 1;
+      }
+
+      hud.theta.textContent = (s[2] < 0 ? '−' : '+') + Math.abs(s[2]).toFixed(3);
+      hud.ep.textContent = String(ep);
+      hud.ret.textContent = ret.toLocaleString('en-US');
+    }
+
+    let raf = 0, last = 0, acc = 0;
+    function frame(now: number) {
+      acc += Math.min(now - last, 100) / 1000;
+      last = now;
+      while (acc >= DT) { tick(); acc -= DT; }
+      draw();
+      raf = requestAnimationFrame(frame);
+    }
+    const start = () => {
+      if (raf) return;
+      last = performance.now();
+      raf = requestAnimationFrame(frame);
+    };
+    const stop = () => { cancelAnimationFrame(raf); raf = 0; };
+
+    canvas.addEventListener('pointerdown', (e) => {
+      const r = canvas.getBoundingClientRect();
+      const cartPx = w / 2 + s[0] * ((w - 32) / (2 * X_LIM + 0.6));
+      // poke the pole away from the side you clicked on
+      push(e.clientX - r.left < cartPx ? 1 : -1);
+    });
+    canvas.addEventListener('keydown', (e) => {
+      if (e.key === 'ArrowLeft' || e.key === 'ArrowRight') {
+        e.preventDefault();
+        push(e.key === 'ArrowLeft' ? -1 : 1);
+      }
+    });
+
+    new ResizeObserver(resize).observe(canvas);
+
+    if (matchMedia('(prefers-reduced-motion: reduce)').matches) {
+      s = [0, 0, 0, 0];
+      root.querySelector<HTMLElement>('.hint')!.hidden = true;
+    } else {
+      new IntersectionObserver(([e]) => (e.isIntersecting ? start() : stop())).observe(canvas);
+    }
+  }
+</script>

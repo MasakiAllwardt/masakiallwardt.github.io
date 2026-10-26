@@ -1,0 +1,58 @@
+---
+// Full-size view for project photos and videos. Thumbnails are the
+// `.media__open` buttons rendered by Row.
+---
+
+<dialog class="lightbox" aria-label="Media viewer">
+  <div class="lightbox__stage"></div>
+  <div class="lightbox__bar">
+    <p class="lightbox__caption"></p>
+    <button class="lightbox__close" type="button">close</button>
+  </div>
+</dialog>
+
+<script>
+  const dialog = document.querySelector<HTMLDialogElement>('.lightbox');
+  const stage = dialog?.querySelector('.lightbox__stage');
+  const caption = dialog?.querySelector('.lightbox__caption');
+  const still = matchMedia('(prefers-reduced-motion: reduce)').matches;
+
+  if (dialog && stage && caption) {
+    document.addEventListener('click', (e) => {
+      const btn = (e.target as Element).closest<HTMLElement>('.media__open');
+      if (!btn) return;
+      const { kind, full = '', alt = '' } = btn.dataset;
+      const el =
+        kind === 'video'
+          ? Object.assign(document.createElement('video'), {
+              src: full,
+              controls: true,
+              autoplay: true,
+              muted: true,
+              loop: true,
+              playsInline: true,
+            })
+          : Object.assign(new Image(), { src: full, alt });
+      stage.replaceChildren(el);
+      caption.textContent = btn.dataset.caption || alt;
+      dialog.showModal();
+    });
+
+    dialog.querySelector('.lightbox__close')!.addEventListener('click', () => dialog.close());
+    // a click outside the media lands on the dialog itself (its backdrop)
+    dialog.addEventListener('click', (e) => e.target === dialog && dialog.close());
+    dialog.addEventListener('close', () => stage.replaceChildren());
+  }
+
+  // Thumbnail videos play only while their row is open.
+  for (const details of document.querySelectorAll('details')) {
+    const vids = details.querySelectorAll<HTMLVideoElement>('.media video');
+    if (!vids.length) continue;
+    details.addEventListener('toggle', () => {
+      for (const v of vids) {
+        if (details.open && !still) v.play().catch(() => {});
+        else v.pause();
+      }
+    });
+  }
+</script>

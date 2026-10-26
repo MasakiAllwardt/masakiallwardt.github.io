@@ -1,0 +1,42 @@
+---
+import Base from '../../layouts/Base.astro';
+import Footer from '../../components/Footer.astro';
+import { site } from '../../data/site';
+import { getPosts, formatDate } from '../../lib/posts';
+
+const posts = await getPosts();
+const years = [...new Set(posts.map((p) => p.data.date.getUTCFullYear()))];
+---
+
+<Base title="Blog" description={`Writing by ${site.name}.`}>
+  <main class="page shell">
+    <nav class="crumbs"><a href="/">← {site.name}</a></nav>
+    <header>
+      <h1 class="name">Blog</h1>
+      <p class="role">Notes on reinforcement learning, robots, and world models.</p>
+    </header>
+
+    <div>
+      {posts.length === 0 && <p class="empty">Nothing here yet.</p>}
+      {
+        years.map((year) => (
+          <div class="group">
+            <p class="label">{year}</p>
+            {posts
+              .filter((p) => p.data.date.getUTCFullYear() === year)
+              .map((p) => (
+                <a class="row" href={`/blog/${p.id}/`}>
+                  <span class="row__name">
+                    <span class="row__title">{p.data.title}</span>
+                    {p.data.description && <span class="row__role">{p.data.description}</span>}
+                  </span>
+                  <span class="row__meta">{formatDate(p.data.date)}</span>
+                </a>
+              ))}
+          </div>
+        ))
+      }
+    </div>
+  </main>
+  <Footer />
+</Base>

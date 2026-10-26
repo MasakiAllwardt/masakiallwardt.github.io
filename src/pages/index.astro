@@ -1,0 +1,134 @@
+---
+import Base from '../layouts/Base.astro';
+import Row from '../components/Row.astro';
+import CartPole from '../components/CartPole.astro';
+import Footer from '../components/Footer.astro';
+import Lightbox from '../components/Lightbox.astro';
+import { site } from '../data/site';
+import { industry, education } from '../data/experience';
+import { ongoing, previous } from '../data/projects';
+import { getPosts, formatDate } from '../lib/posts';
+
+const posts = await getPosts();
+const tabs = [
+  { id: 'experience', label: 'Experience' },
+  { id: 'projects', label: 'Projects' },
+  { id: 'blog', label: 'Blog' },
+];
+---
+
+<Base>
+  <main class="page shell">
+    <header>
+      <h1 class="name">{site.name}</h1>
+      <p class="role">{site.role}</p>
+      <p class="bio">{site.bio}</p>
+    </header>
+
+    <div class="tabs" role="tablist" aria-label="Sections">
+      {
+        tabs.map((t, i) => (
+          <button
+            class="tab"
+            role="tab"
+            id={`tab-${t.id}`}
+            data-tab={t.id}
+            aria-controls={`panel-${t.id}`}
+            aria-selected={i === 0 ? 'true' : 'false'}
+            tabindex={i === 0 ? 0 : -1}
+          >
+            {t.label}
+          </button>
+        ))
+      }
+    </div>
+
+    <div class="panels">
+      <section class="panel" id="panel-experience" role="tabpanel" aria-labelledby="tab-experience">
+        <div class="group">
+          <p class="label">Industry</p>
+          {industry.map((e) => <Row entry={e} group="industry" />)}
+        </div>
+        <div class="group">
+          <p class="label">Education</p>
+          {education.map((e) => <Row entry={e} group="education" />)}
+        </div>
+      </section>
+
+      <section class="panel" id="panel-projects" role="tabpanel" aria-labelledby="tab-projects" hidden>
+        <div class="group">
+          <p class="label">Ongoing</p>
+          {ongoing.map((p) => <Row entry={p} group="ongoing" />)}
+        </div>
+        <div class="group">
+          <p class="label">Previous</p>
+          {previous.map((p) => <Row entry={p} group="previous" />)}
+        </div>
+      </section>
+
+      <section class="panel" id="panel-blog" role="tabpanel" aria-labelledby="tab-blog" hidden>
+        <div class="group">
+          <p class="label">Writing</p>
+          {posts.length === 0 && <p class="empty">Nothing here yet.</p>}
+          {
+            posts.map((p) => (
+              <a class="row" href={`/blog/${p.id}/`}>
+                <span class="row__name">
+                  <span class="row__title">{p.data.title}</span>
+                </span>
+                <span class="row__meta">{formatDate(p.data.date, 'long')}</span>
+              </a>
+            ))
+          }
+        </div>
+      </section>
+    </div>
+
+    <ul class="links">
+      {
+        site.links.map((l) => (
+          <li>
+            <a href={l.href} {...(l.href.startsWith('http') ? { target: '_blank', rel: 'noopener' } : {})}>
+              {l.label}
+            </a>
+          </li>
+        ))
+      }
+    </ul>
+  </main>
+
+  <CartPole />
+  <Footer />
+  <Lightbox />
+
+  <script is:inline>
+    (() => {
+      const tabs = [...document.querySelectorAll('[role="tab"]')];
+      const select = (id, focus) => {
+        for (const t of tabs) {
+          const on = t.dataset.tab === id;
+          t.setAttribute('aria-selected', String(on));
+          t.tabIndex = on ? 0 : -1;
+          document.getElementById(t.getAttribute('aria-controls')).hidden = !on;
+          if (on && focus) t.focus();
+        }
+      };
+      tabs.forEach((t, i) => {
+        t.addEventListener('click', () => {
+          select(t.dataset.tab);
+          history.replaceState(null, '', '#' + t.dataset.tab);
+        });
+        t.addEventListener('keydown', (e) => {
+          const step = { ArrowRight: 1, ArrowLeft: -1 }[e.key];
+          if (!step) return;
+          e.preventDefault();
+          const next = tabs[(i + step + tabs.length) % tabs.length];
+          select(next.dataset.tab, true);
+          history.replaceState(null, '', '#' + next.dataset.tab);
+        });
+      });
+      const fromHash = location.hash.slice(1);
+      if (tabs.some((t) => t.dataset.tab === fromHash)) select(fromHash);
+    })();
+  </script>
+</Base>
